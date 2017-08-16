@@ -34,10 +34,11 @@ namespace Ateam
         Vector2 mainTargetPos;
         List<Vector2> subTargetPosList = new List<Vector2>();
 
-        List<ItemSpawnData> itemList=new List<ItemSpawnData>();
+        List<ItemSpawnData> itemList = new List<ItemSpawnData>();
 
         List<CharacterModel.Data> playerList;
         List<CharacterModel.Data> enemyList;
+        int ct;
 
         //---------------------------------------------------
         // InitializeAI
@@ -52,8 +53,8 @@ namespace Ateam
 
             DataUpdate();
 
-            this.itemList = new List<ItemSpawnData>() ;
-         
+            this.itemList = new List<ItemSpawnData>();
+
         }
 
         //---------------------------------------------------
@@ -63,8 +64,8 @@ namespace Ateam
         {
             /*List<CharacterModel.Data> playerList = GetTeamCharacterDataList(TEAM_TYPE.PLAYER);
             List<CharacterModel.Data> enemyList = GetTeamCharacterDataList(TEAM_TYPE.ENEMY);*/
-            this.playerList= GetTeamCharacterDataList(TEAM_TYPE.PLAYER);
-            this.enemyList= GetTeamCharacterDataList(TEAM_TYPE.ENEMY);
+            this.playerList = GetTeamCharacterDataList(TEAM_TYPE.PLAYER);
+            this.enemyList = GetTeamCharacterDataList(TEAM_TYPE.ENEMY);
 
             //データの更新
             if (DataUpdate() == false)
@@ -72,7 +73,11 @@ namespace Ateam
                 return;
             }
 
-            MoveUpdate();
+            if (ct % 5 == 0)
+            {
+                MoveUpdate();
+            }
+            ct++;
 
             //攻撃更新
             ActionUpdate();
@@ -386,43 +391,38 @@ namespace Ateam
             //Move(_mainCharacter.ActorId, Common.MOVE_TYPE.RIGHT);
 
             // アイテムがあればそこに移動
-            if (this.itemList.Count >= 1)
+            /*if (this.itemList.Count >= 1)
             {
                 // 最も近いアイテムを探す
                 int minIndex = -1;
                 float minDist = 99999;
-                for(int i=0;i<this.itemList.Count;i++)
+                for (int i = 0; i < this.itemList.Count; i++)
                 {
                     float length = Vector2.Distance(this._mainCharacter.BlockPos, itemList[i].BlockPos);
                     if (length < minDist)
                     {
                         minDist = length;
-                        minIndex=i;
+                        minIndex = i;
                     }
                 }
                 this.mainTargetPos = this.itemList[minIndex].BlockPos;
             }
             else
             {
-
-                /*//ターゲットの近くになったら更新
-                if (targetCharacterData != null
-                    && (targetCharacterData.BlockPos - _mainCharacter.BlockPos).magnitude < MAIN_MOVE_UPDATE_THRESHOLD)
-                {
-                    //_mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, targetCharacterData.BlockPos);
-                    this.mainTargetPos = targetCharacterData.BlockPos;
-                }*/
-                //_mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, targetCharacterData.BlockPos);
                 if (targetCharacterData != null)
                 {
                     this.mainTargetPos = targetCharacterData.BlockPos;
                 }
-            }
+            }*/
+
+            this.selectTarget();
 
 
             //旗艦だけ先に行動
             //残りのサブ戦闘機は旗艦の周りに配置して援護射撃
-            if (targetCharacterData != null
+            
+
+                if (targetCharacterData != null
                 && _mainMoveList.Count <= 0)
             {
                 //_mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, targetCharacterData.BlockPos);
@@ -435,7 +435,7 @@ namespace Ateam
                 _mainMoveList.RemoveAt(0);
             }
 
-            _mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, this.mainTargetPos);
+                _mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, this.mainTargetPos);
 
             // サブ機は，親機の少し後ろで待機
             // ただし，HPが減っていて，回復アイテムが存在すればそれを取りに行くことを優先する
@@ -451,7 +451,7 @@ namespace Ateam
                     {
                         Move(data.ActorId, GetVecToMoveType(moveList[0] - data.BlockPos));
                     }
-                } 
+                }
             }
 
             Vector2 subTargetVec = this.mainTargetPos - this._mainCharacter.BlockPos;
@@ -467,14 +467,14 @@ namespace Ateam
             //_subMoveList[0] = MoveTargetBlock(_subCharacterList[0].ActorId, this.mainTargetPos - subTargetVec);
             foreach (CharacterModel.Data data in _subCharacterList)
             {
-                List<Vector2> moveList = MoveTargetBlock(data.ActorId, this._mainCharacter.BlockPos-subTargetVec*2);
+                List<Vector2> moveList = MoveTargetBlock(data.ActorId, this._mainCharacter.BlockPos - subTargetVec * 2);
                 if (moveList.Count > 0)
                 {
                     Move(data.ActorId, GetVecToMoveType(moveList[0] - data.BlockPos));
                 }
             }
 
-           
+
 
             // アイテムの場所にたどり着いていれば
             int count = -1;
@@ -514,7 +514,7 @@ namespace Ateam
 
             //生存している戦闘機を旗艦に設定
             //_mainCharacter = searchAliveTeam(TEAM_TYPE.PLAYER);
-            _mainCharacter= GetLowHpCharacterData(TEAM_TYPE.PLAYER);
+            _mainCharacter = GetLowHpCharacterData(TEAM_TYPE.PLAYER);
 
             if (_mainCharacter == null)
             {
@@ -559,11 +559,11 @@ namespace Ateam
         //---------------------------------------------------
         void DamageCallBack(int actorId)
         {
-            /*if (GetCharacterData(actorId).Hp < 300)
+            if (GetCharacterData(actorId).Hp < 300)
             {
                 Action(actorId, Define.Battle.ACTION_TYPE.INVINCIBLE);
-            }*/
-            Action(actorId, Define.Battle.ACTION_TYPE.INVINCIBLE);
+            }
+            //Action(actorId, Define.Battle.ACTION_TYPE.INVINCIBLE);
         }
 
         //---------------------------------------------------
@@ -578,6 +578,76 @@ namespace Ateam
              *  HP_RECOVER, 
             */
             this.itemList.Add(itemData);
+        }
+
+        struct Score
+        {
+            public float value;
+            public Vector2 blockPos;
+        }
+
+        void selectTarget()
+        {
+            //HPが弱いやつからターゲットにする
+            CharacterModel.Data targetCharacterData = GetLowHpCharacterData(TEAM_TYPE.ENEMY);
+
+            List<Score> scoreList = new List<Score>();
+
+            if (targetCharacterData == null) return;
+            Score scoreEnemy;
+            scoreEnemy.value= Vector2.Distance(this._mainCharacter.BlockPos, targetCharacterData.BlockPos) * 20;
+            scoreEnemy.blockPos = targetCharacterData.BlockPos;
+            scoreList.Add(scoreEnemy);
+            foreach (ItemSpawnData item in this.itemList)
+            {
+                float typevalue = 1;
+                if (item.ItemType == ItemData.ITEM_TYPE.ATTACK_UP) typevalue = 50;
+                if (item.ItemType == ItemData.ITEM_TYPE.SPEED_UP) typevalue = 100;
+                if (item.ItemType == ItemData.ITEM_TYPE.HP_RECOVER) typevalue = 0;
+                Score score = new Score();
+                score.value = Vector2.Distance(item.BlockPos, this._mainCharacter.BlockPos) * typevalue;
+                score.blockPos = item.BlockPos;
+                scoreList.Add(score);
+            }
+
+            // 最もハイスコアのターゲットに移動
+            float minScore = 99999999;
+            int minIndex=-1;
+            for (int i = 0; i < scoreList.Count; i++) { 
+                Debug.Log(scoreList[i].blockPos+","+scoreList[i].value);
+                if (scoreList[i].value < minScore)
+                {
+                    minScore = scoreList[i].value;
+                    minIndex = i;
+                }
+            }
+            this.mainTargetPos = scoreList[minIndex].blockPos ;
+
+
+            /*// アイテムがあればそこに移動
+            if (this.itemList.Count >= 1)
+            {
+                // 最も近いアイテムを探す
+                int minIndex = -1;
+                float minDist = 99999;
+                for (int i = 0; i < this.itemList.Count; i++)
+                {
+                    float length = Vector2.Distance(this._mainCharacter.BlockPos, itemList[i].BlockPos);
+                    if (length < minDist)
+                    {
+                        minDist = length;
+                        minIndex = i;
+                    }
+                }
+                this.mainTargetPos = this.itemList[minIndex].BlockPos;
+            }
+            else
+            {
+                if (targetCharacterData != null)
+                {
+                    this.mainTargetPos = targetCharacterData.BlockPos;
+                }
+            }*/
         }
 
         bool isExistItem(ItemData.ITEM_TYPE type)
