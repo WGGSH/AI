@@ -29,9 +29,15 @@ namespace Ateam
         List<CharacterModel.Data> _subCharacterList = new List<CharacterModel.Data>();
         List<HpData> _oldHpList = new List<HpData>();
         List<Vector2> _mainMoveList = new List<Vector2>();
+        List<List<Vector2>> _subMoveList = new List<List<Vector2>>();
 
-        List<Vector2> itemBlockPosList;
+        Vector2 mainTargetPos;
+        List<Vector2> subTargetPosList = new List<Vector2>();
 
+        List<ItemSpawnData> itemList=new List<ItemSpawnData>();
+
+        List<CharacterModel.Data> playerList;
+        List<CharacterModel.Data> enemyList;
 
         //---------------------------------------------------
         // InitializeAI
@@ -46,7 +52,8 @@ namespace Ateam
 
             DataUpdate();
 
-            this.itemBlockPosList = new List<Vector2>();
+            this.itemList = new List<ItemSpawnData>() ;
+         
         }
 
         //---------------------------------------------------
@@ -54,8 +61,10 @@ namespace Ateam
         //---------------------------------------------------
         override public void UpdateAI()
         {
-            List<CharacterModel.Data> playerList = GetTeamCharacterDataList(TEAM_TYPE.PLAYER);
-            List<CharacterModel.Data> enemyList = GetTeamCharacterDataList(TEAM_TYPE.ENEMY);
+            /*List<CharacterModel.Data> playerList = GetTeamCharacterDataList(TEAM_TYPE.PLAYER);
+            List<CharacterModel.Data> enemyList = GetTeamCharacterDataList(TEAM_TYPE.ENEMY);*/
+            this.playerList= GetTeamCharacterDataList(TEAM_TYPE.PLAYER);
+            this.enemyList= GetTeamCharacterDataList(TEAM_TYPE.ENEMY);
 
             //データの更新
             if (DataUpdate() == false)
@@ -377,17 +386,39 @@ namespace Ateam
             //Move(_mainCharacter.ActorId, Common.MOVE_TYPE.RIGHT);
 
             // アイテムがあればそこに移動
-            if (this.itemBlockPosList.Count>=1)
+            if (this.itemList.Count >= 1)
             {
-                _mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, this.itemBlockPosList[0]);
+                // 最も近いアイテムを探す
+                int minIndex = -1;
+                float minDist = 99999;
+                for(int i=0;i<this.itemList.Count;i++)
+                {
+                    float length = Vector2.Distance(this._mainCharacter.BlockPos, itemList[i].BlockPos);
+                    if (length < minDist)
+                    {
+                        minDist = length;
+                        minIndex=i;
+                    }
+                }
+                this.mainTargetPos = this.itemList[minIndex].BlockPos;
             }
-            
-            //ターゲットの近くになったら更新
-            if (targetCharacterData != null
-                && (targetCharacterData.BlockPos - _mainCharacter.BlockPos).magnitude < MAIN_MOVE_UPDATE_THRESHOLD)
+            else
             {
-                _mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, targetCharacterData.BlockPos);
+
+                /*//ターゲットの近くになったら更新
+                if (targetCharacterData != null
+                    && (targetCharacterData.BlockPos - _mainCharacter.BlockPos).magnitude < MAIN_MOVE_UPDATE_THRESHOLD)
+                {
+                    //_mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, targetCharacterData.BlockPos);
+                    this.mainTargetPos = targetCharacterData.BlockPos;
+                }*/
+                //_mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, targetCharacterData.BlockPos);
+                if (targetCharacterData != null)
+                {
+                    this.mainTargetPos = targetCharacterData.BlockPos;
+                }
             }
+
 
             //旗艦だけ先に行動
             //残りのサブ戦闘機は旗艦の周りに配置して援護射撃
@@ -404,53 +435,73 @@ namespace Ateam
                 _mainMoveList.RemoveAt(0);
             }
 
-            //サブ機はメイン機の周りに配置
-            //一定の距離になったらターゲットに突撃
-            //周りに空きがなかったら待機
+            _mainMoveList = MoveTargetBlock(_mainCharacter.ActorId, this.mainTargetPos);
+
+            // サブ機は，親機の少し後ろで待機
+            // ただし，HPが減っていて，回復アイテムが存在すればそれを取りに行くことを優先する
             foreach (CharacterModel.Data data in _subCharacterList)
             {
-                //ターゲットの近くになったらそっちに移動
-                if (targetCharacterData != null
-                   && (targetCharacterData.BlockPos - data.BlockPos).magnitude < SUB_MOVE_UPDATE_THRESHOLD)
+                if (data.Hp < 300)
                 {
-                    List<Vector2> moveList = MoveTargetBlock(data.ActorId, targetCharacterData.BlockPos);
+                    ItemSpawnData hpItem = this.getItem(ItemData.ITEM_TYPE.HP_RECOVER);
+                    //_subMoveList[0] = MoveTargetBlock(_subCharacterList[0].ActorId, this.mainTargetPos - subTargetVec);
 
+                    List<Vector2> moveList = MoveTargetBlock(data.ActorId, this._mainCharacter.BlockPos - hpItem.BlockPos);
                     if (moveList.Count > 0)
                     {
                         Move(data.ActorId, GetVecToMoveType(moveList[0] - data.BlockPos));
                     }
-                }
-                else
+                } 
+            }
+
+            Vector2 subTargetVec = this.mainTargetPos - this._mainCharacter.BlockPos;
+            if (Mathf.Abs(subTargetVec.x) > Mathf.Abs(subTargetVec.y))
+            {
+                subTargetVec.y = 0;
+            }
+            else
+            {
+                subTargetVec.x = 0;
+            }
+            subTargetVec = subTargetVec.normalized;
+            //_subMoveList[0] = MoveTargetBlock(_subCharacterList[0].ActorId, this.mainTargetPos - subTargetVec);
+            foreach (CharacterModel.Data data in _subCharacterList)
+            {
+                List<Vector2> moveList = MoveTargetBlock(data.ActorId, this._mainCharacter.BlockPos-subTargetVec*2);
+                if (moveList.Count > 0)
                 {
-                    for (int i = 0; i < 5; i++)
+                    Move(data.ActorId, GetVecToMoveType(moveList[0] - data.BlockPos));
+                }
+            }
+
+           
+
+            // アイテムの場所にたどり着いていれば
+            int count = -1;
+            foreach (CharacterModel.Data player in this.playerList)
+            {
+                for (int i = 0; i < itemList.Count; i++) {
+                    if (player.BlockPos == itemList[i].BlockPos)
                     {
-                        Vector2 block;
-                        int bias = UnityEngine.Random.Range(0, 2) - 1;
-                        block.x = _mainCharacter.BlockPos.x + (UnityEngine.Random.Range(2, 2) * bias);
-                        block.y = _mainCharacter.BlockPos.y + (UnityEngine.Random.Range(2, 2) * bias);
-
-                        if (GetBlockType(block) == Ateam.Define.Stage.BLOCK_TYPE.NORMAL)
-                        {
-                            List<Vector2> moveList = MoveTargetBlock(data.ActorId, block);
-
-                            if (moveList.Count != 0)
-                            {
-                                Move(data.ActorId, GetVecToMoveType(moveList[0] - data.BlockPos));
-                            }
-
-                            break;
-                        }
+                        count = i;
                     }
                 }
             }
-
-            // アイテムの場所にたどり着いていれば
-            foreach(Vector2 itemPos in this.itemBlockPosList){
-                if (_mainCharacter.BlockPos == itemPos)
+            foreach (CharacterModel.Data enemy in this.enemyList)
+            {
+                for (int i = 0; i < itemList.Count; i++)
                 {
-                    this.itemBlockPosList.Remove(itemPos);
+                    if (enemy.BlockPos == itemList[i].BlockPos)
+                    {
+                        count = i;
+                    }
                 }
             }
+            if (count != -1)
+            {
+                this.itemList.Remove(this.itemList[count]);
+            }
+
         }
 
         //---------------------------------------------------
@@ -462,7 +513,8 @@ namespace Ateam
             _subCharacterList.Clear();
 
             //生存している戦闘機を旗艦に設定
-            _mainCharacter = searchAliveTeam(TEAM_TYPE.PLAYER);
+            //_mainCharacter = searchAliveTeam(TEAM_TYPE.PLAYER);
+            _mainCharacter= GetLowHpCharacterData(TEAM_TYPE.PLAYER);
 
             if (_mainCharacter == null)
             {
@@ -507,10 +559,11 @@ namespace Ateam
         //---------------------------------------------------
         void DamageCallBack(int actorId)
         {
-            if (GetCharacterData(actorId).Hp < 300)
+            /*if (GetCharacterData(actorId).Hp < 300)
             {
                 Action(actorId, Define.Battle.ACTION_TYPE.INVINCIBLE);
-            }
+            }*/
+            Action(actorId, Define.Battle.ACTION_TYPE.INVINCIBLE);
         }
 
         //---------------------------------------------------
@@ -524,7 +577,35 @@ namespace Ateam
              *  SPEED_UP,
              *  HP_RECOVER, 
             */
-            this.itemBlockPosList.Add(itemData.BlockPos);
+            this.itemList.Add(itemData);
+        }
+
+        bool isExistItem(ItemData.ITEM_TYPE type)
+        {
+            foreach (ItemSpawnData item in this.itemList)
+            {
+                if (item.ItemType == type)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 指定のタイプのアイテムを取得する
+        ItemSpawnData getItem(ItemData.ITEM_TYPE type)
+        {
+            float minDist=99999;
+            ItemSpawnData returnItem = new ItemSpawnData(); 
+            foreach (ItemSpawnData item in this.itemList)
+            {
+                if (item.ItemType == type)
+                {
+                    float dist = Vector2.Distance(this._mainCharacter.BlockPos, item.BlockPos);
+                    if (dist < minDist) returnItem = item;
+                }
+            }
+            return returnItem;
         }
     }
 }
